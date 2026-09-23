@@ -1,0 +1,3 @@
+system-one-adapter>=0.2.1
+gigachat>=0.2.3
+python-dotenv>=1.0.0
