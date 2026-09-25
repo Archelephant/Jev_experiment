@@ -2,328 +2,330 @@
 marp: true
 theme: default
 paginate: true
-header: "Jev & Laya: System One decision models"
-footer: "Jev and Laya presentation"
+header: "System One: CLM · Jev · эксперимент TimesFM → NanoJev"
+footer: "System One decision models"
 size: 16:9
 ---
 
 <!-- _class: lead -->
 
-# Jev и Laya
+# System One-модели
 
-## Как устроены «System One» decision-модели
-### и как этот подход реализован в открытой модели Laya
+## CLM-8B · Jev · эксперимент TimesFM → NanoJev
 
 <br>
 
-Контекст проекта: классификация поведения по временным рядам мощности
-(«клоны Jev» vs baseline-модели) + адаптер TypeSafe System One поверх GigaChat
+- **CLM-8B** — открытая контрастивная модель «скоринга действий» (Apache-2.0);
+- **Jev** — первый публичный System One model (TypeSafe AI);
+- наш эксперимент: переносим их идеи на классификацию поведения по `P_RMS`.
 
 ---
 
-# Проблема: LLM — «chat», а не надёжное ПО
+# С чего всё началось: LLM — «chat», а не надёжное ПО
 
-- **RLHF** сделал LLM супер-человечными в следовании инструкциям, но породил:
-  - **mode dropping** — вырождение разнообразия ответов,
-  - **overconfidence** — уверенность без истинной вероятности,
-  - **отсутствие надёжности** → нужен человек в цикле (human-in-the-loop).
+- **RLHF** дал супер-человечность в следовании инструкциям, но породил:
+  - **mode dropping** (вырождение разнообразия),
+  - **overconfidence** (уверенность без вероятности),
+  - **ненадёжность** → человек в цикле (human-in-the-loop).
 
-- LLM возвращают **строки текста** — их нужно парсить, валидировать, перезапрашивать.
-
-- **Стоимость** одного решения на сильном LLM — дорогая генерация токенов
-  (до 8+ секунд и ¥0.014 за типовую задачу).
+- LLM возвращают **строки текста** — их парсят, валидируют, перезапрашивают.
+- Решения **медленные и дорогие**: 3–329 с и платные выходные токены.
 
 ```
-LLM:  "please structure": "billing"   ← нужно распарсить, проверить, повторить при ошибке
-Jev:  {"choice": "billing", "confidence": 0.94}   ← тип, значение, уверенность сразу
+LLM:  "please structure": "billing"    ← парсить, проверять, повторять
+Jev:  {"choice": "billing", "confidence": 0.94}    ← тип + вероятность сразу
+CLM:  {"choice": "billing", "probabilities": {...}}  ← скоринг кандидатов
 ```
+
+> Выход: класс **System One Models** — «машине нужны решения, а не разговор».
 
 ---
 
-# Обратный путь: «машине нужны решения, а не разговор»
+# Две открытые ветки «System One»
 
-TypeSafe AI сознательно пошла **в противоположном направлении**:
-
-- Не «chat», а **System One Models** — модели, созданные **для машин**:
-  - новая архитектура,
-  - новый сэмплер,
-  - новый алгоритм обучения — **RLCD** (Reinforcement Learning for Calibrated Decisions).
-
-- Принцип: **едниственная задача модели — принимать решения**, генерируя 0 токенов текста.
-
-```
-192.6× быстрее, 444.6× дешевле чем LLM на workflow-задачах System One
-```
-
-(данные: блог TypeSafe AI «Introducing System One Models & Jev»)
-
----
-
-# Jev — первый публичный System One model (TypeSafe AI)
-
-**Что это:** модель, которая на вход получает **состояние** (текст, документ, JSON…)
-и **типизированные вопросы**, а на выходе даёт типизированные ответы с вероятностями.
-
-- **Jev истоки — исследование Novo Nordisk** (авторы: Sune Debel, Ewa Andrejczuk и др.);
-  проект выделился в компанию **TypeSafe AI** (SF).
-- Доступен через **закрытый API** (docs.typesafe.ai, console.typesafe.ai), хотя
-  есть открытая спецификация протокола и open-реплики.
-- **Стоимость**: $42 / 1 млрд токенов — в 238× дешевле Claude Fable 5.1.
-- Каждое решение = **choice / score / noul** + **calibrated confidence**.
-
-Формально:
-```text
-POST /v1/systemone  { state, questions: { qid: {type, instructions, criteria} } }
-        ↓
-        { qid: { choice|score|noul, probabilities[], confidence, ... } }
-```
-
----
-
-# Типизированные решения (Typed Decisions)
-
-Интерфейс **не зависит от модели/backend** — программа оперирует типизированными значениями:
-
-| Тип | Смысл | Формат ответа |
+| | **Jev** (TypeSafe AI) | **CLM-8B** (Contrastive-LM) |
 |---|---|---|
-| **choice** | выбор одного варианта из N | `choice` + `probabilities[]` |
-| **score** | числовая оценка по критериям | `score` + доверие |
-| **noul** | бинарный «да/нет» (no / unknown / yes) | `noul` = P(да) + `confidence` |
+| Идея | типизированные решения + калиброванная уверенность | контрастивный скоринг state ↔ action |
+| Вывод | все вероятности параллельно, 0 токенов | 1 эмбеддинг состояния + dot-product |
+| Обучение | RLCD | InfoNCE (3-этапный рецепт) |
+| Протокол | `/v1/systemone` | `/v1/systemone` (**совместим**) |
+| Открытость | закрытый API (early access с 15.09.2026) | **Apache-2.0** (голова 75 МБ) |
+| Опора на GPU | проприетарная | Qwen3-8B энкодер (≥16 ГБ) |
 
-- **Confidence** — оценка уверенности модели → программа сама решает:
-  *высокая уверенность = действовать автономно*, низкая = эскалация человеку.
-- Пороги уверенности подбирает разработчик — «intelligence used with control».
-
-```python
-questions = {
-  "department": {"type": "choice", "criteria": {"billing": "...", "technical": "...", "other": "..."}},
-  "urgency":    {"type": "score",  "criteria": ["not urgent", "soon", "blocking"]},
-  "churn_risk": {"type": "noul",   "instructions": "Пользователь грозит уйти?"},
-}
-ans = system_one(state, questions)
-print(ans["department"]["choice"], ans["churn_risk"]["noul"], ans["department"]["confidence"])
-```
+Общая теорема: «state в, типизированное решение из — без генерации токенов».
 
 ---
 
-# Как учим: RLCD — правдивые вероятности как оптимум
+# Часть 1 · CLM — контрастивные языковые модели
 
-**RLCD = Reinforcement Learning for Calibrated Decisions.**
+## Архитектура: не генерировать, а ранжировать кандидатов
 
-- Модель выдаёт распределение. **Exploration** — гауссовский шум на логитах.
-- **Reward = строго собственный scoring rule**
-  (log + spherical; для порядковых — ranked probability score).
-- Строго собственная мера ⇒ **максимизировать reward можно ТОЛЬКО честными вероятностями**.
-- Обновления: REINFORCE с градиентной базой по группе (GRPO-style).
-- Многоходовые диалоги: TD(λ=1.0) по префиксным срезам.
-
-> Следствие: модель не штрафуется за «уверенность», а штрафуется за **некалиброванность** —
-> report honest probabilities — это единственный способ максимизировать награду.
-
-Сталь, которую наследует и Laya: логика RLCD.
-
----
-
-# Архитектура системы (как это устроено изнутри)
-
-Упрощённая схема «одного прохода» (принципы Jev, реализация Laya):
+- **Два энкодера**: state-энкодер и action-энкодер.
+- Каждый = **замороженный Qwen3-8B** + обучаемая проекционная голова **~20M параметров**;
+  чекпойнт-«голова» весит всего **75 МБ** (Apache-2.0).
+- Скоринг: `score_i = dot(state_emb, action_emb_i)`; `softmax` по кандидатам = распределение ответа.
 
 ```mermaid
 graph LR
-  A[State + вопросы+criтерии] --> B[Сериализация в текст]
-  B --> C[Encoder: ModernBERT-large / mmBERT]
-  C --> D[Decision Head: option-marker scorer]
-  D --> E[softmax по вариантам вопроса]
-  E --> F[типизированный ответ + confidence + temperature]
+  S[State] --> SE[state encoder<br/>Qwen3-8B frozen + 20M head]
+  A1[Action 1] --> AE[action encoder<br/>Qwen3-8B frozen + 20M head]
+  AN[Action N] --> AE
+  SE --> ES[emb state]
+  AE --> EA[emb action 1..N]
+  ES --> DOT[dot + softmax]
+  EA --> DOT
+  DOT --> R[choice + probabilities]
 ```
 
-- **Option markers**: каждый вариант получает свой `[MASK]`-токен,
-  моделируется **scorer** по скрытому состоянию маркера,
-  затем **softmax по вариантам вопроса**.
-- **Пространство ответов задаётся на лету** (каждым запросом) —
-  новая схема вопросов **не требует дообучения**.
-- **Весь пакет вопросов — за один forward pass** (batching).
+- Типизированный вопрос = **state + закрытый набор кандидатов** (опции с описаниями).
 
 ---
 
-# Laya — открытая реализация подхода Jev
+# Как учат CLM: двунаправленный InfoNCE + 3-этапный рецепт
 
-**Что это:** многоязычная, **не-авторегрессионная** System One decision-модель (Apache-2.0).
-
-- GitHub: `github.com/NandhaKishorM/laya` · HF: `convaiinnovations/laya`
-- Установка: `pip install laya`
-- Ничего не «генерирует» → **нечего парсить, нечему галлюцинировать**.
-
-```python
-from laya import Router
-router = Router()  # скачает чекпойнт при первом вызове
-res = router.predict(state, questions)
-print(res["answers"]["department"]["choice"])   # billing
-print(res["answers"]["churn_risk"]["noul"])     # 0.892
-print(res["routing"]["model"], res["answers"]["department"]["confidence"])  # english, 0.94
-```
-
-Аналогичный API — у GigaChat-адаптера в нашем проекте (Noul/Score/Choice +
-`SystemOneResponse` + corrective-retries).
-
----
-
-# Архитектура Laya — 1:1 наследование идей Jev
-
-| Компонент | Реализация в Laya |
-|---|---|
-| Backbone | **ModernBERT-large** (bi-directional, 395M) + головы, итого **421M**; multilingual: mmBERT-base, 322M |
-| Decision head | 2 Transformer-слоя + **option-marker scorer** + **act/escalate head** |
-| Кодирование вопросов | state + instructions + criteria → текст со `[MASK]`-маркерами вариантов |
-| Score | у каждого `[MASK]`-токена своё значение → softmax по вариантам вопроса |
-| Типизация | **choice / score / noul** (тот же протокол, что Jev API) |
-| Budget | 512 токенов/вопрос (EN, head_max_len=192); 1024 (multilingual, 256) |
-| Batching | все вопросы вызова — **один forward pass** (~33 ms на GPU) |
-
-Код обучения головы (упрощённо): `TransformerEncoder → scorer(LayerNorm→Linear→GELU→Linear(d,1))`.
-
----
-
-# Калибровка и confidence в Laya
-
-- **Raw ECE** базовой модели перекалиброван: после **temperature-fitting** по типам
-  (question type, option count) ECE падает: **0.466 → 0.081** (EN), **0.314 → 0.106** (multilingual).
-- Confidence «работает»: на проверочных данных AUROC = 0.77.
-- **act_probability пока не несёт сигнала** (≈1.0 почти всегда) → в проде
-  gate-ите по `confidence`, а не по `act`.
-
-Вывод для нашего проекта (fine-tune Laya, frankentein-подход):
-- подгонка temperature на своих данных — обязательный шаг до доверия вероятностям;
-- baseline-модели (base English) почти **на уровне random** на typed-decisions
-  (0.362 vs random 0.318) — эффект достигается **fine-tuning'ом**, поэтому в
-  эксперименте закладываем разделы 4 (fine-tune) и 5 (fine-tune слоёв).
-
----
-
-# Router: многоязычность и маршрутизация
-
-**Router** — recommended way в проде:
-
-- определяет **script / язык** (< 0.5 ms, чистый Python, ДО forward pass),
-- направляет на оптимальный чекпойнт (english / multilingual / typed-decisions),
-- строки-реплики: `routing.model`, `routing.reason`.
-
-```python
-res_hi = router.predict({"body": "मुझसे दो बार शुल्क लिया गया, कृपया पैसे वápать करें।"}, questions)
-print(res_hi["answers"]["department"]["choice"], res_hi["routing"]["model"])
-# billing multilingual
-```
-
-Почему это важно (доказано vs Jev bench):
-- English-чекпойнт на кхмерском: **acc 0.000 при confidence 0.952** —
-  модель уверенно и системно неверна → confidence-gating не спасёт.
-- Routing охватывает **45/51 языков** (>3× random) против 23/51 у EN ровера.
-
-Сравнение в бенчмарке (T4 GPU):
+**Цель**: подтянуть state к сэмплированному действию, оттолкнуть от остальных.
 
 ```
-MASSIVE intent EN:       laya 0.783 vs multilingual 0.657 vs Router 0.783
-MASSIVE intent 13+ langs: laya 0.306 vs multilingual 0.451 vs Router 0.451
-Latency 1 q (T4):        39.5 ms vs 32.8 ms
-Latency 10 q batched:    158.6 ms vs 72.3 ms
+L = -1/(2B) Σ [ log exp(sᵢᵀaᵢ/τ) / Σⱼ exp(sᵢᵀaⱼ/τ)
+               + log exp(aᵢᵀsᵢ/τ) / Σⱼ exp(aᵢᵀsⱼ/τ) ]
 ```
 
----
-
-# Jev-совместимый сервер (self-hosting)
-
-`laya-serve` реализует **тот же протокол, что TypeSafe Jev** —
-`POST /v1/systemone`, те же shape-ы вопросов и ответов.
-
-```bash
-pip install "laya[serve]"
-LAYA_DEVICE=cuda LAYA_PRELOAD=1 laya-serve        # 0.0.0.0:8000
-curl -s localhost:8000/v1/systemone -d '{ "state": {"document": "..."},
-  "questions": {"billing": {"type": "noul", "instructions": "..."}} }'
-```
-
-- принимает любые формы вопросов Jev API (в т.ч. `criteria` как список),
-- 422 с именем поля при malformed-вопросе,
-- `Authorization: Bearer <key>` при `LAYA_API_KEY`.
-
-> Значит, клиенты TypeSafe могут переключиться на Laya сменой base URL —
-> экосистема остаётся совместимой на уровне протокола.
-
----
-
-# Обучение Laya на практике (fine-tuning)
-
-Официальный пайплайн на Kaggle (2×T4, готовый ноутбук в репо) — RLCD из «первых рук»:
-
-1. **Собрать датасет**: штат + вопросы + ответы учителя (choice/score/noul) с вероятностями.
-2. **Forward**: энкодер + decision head → логиты вариантов.
-3. **Reward (strictly proper)**: log + spherical (+RPS для ordinal).
-4. **Policy gradient**: REINFORCE + group-mean baseline (GRPO-стиль); exploration — шум на логитах.
-5. **Post-training**: подгонка temperature на валидации → калибровка.
-6. **Evaluate & push** на Hub (например, `laya-typed-decisions`).
-
-Результат fine-tune:
-```
-typed-decisions (2k decisions, 4 workflows):  0.362 → 0.766 (vs Jev 0.727)
-по примитивам: noul 0.857, choice 0.733, score 0.723
-```
-Наш эксперимент: follow-up — fine-tune Laya на задачах классификации
-поведения по P_RMS (разделы 4–5 ноутбука) вместо генеративного GigaChat.
-
----
-
-# Laya vs Jev: ключевой бенчмарк (типизированные решения)
-
-Из опубликованных бенчмарков (Jev-цифры третьих лиц, Laya измерена автором):
-
-| Метрика | TypeSafe Jev 1.13.0 | Laya (routed) |
+| Этап | Данные | Эффект |
 |---|---|---|
-| typed-decisions acc (2k) | 0.727 | **0.766** |
-| AG News (4 labels) | 0.910 | **0.950** |
-| Banking77 (>20 options) | **0.870** | 0.425 |
-| ECE (ниже=лучше) | 0.246 | **0.081** |
-| p50 latency, 1 вопрос | 236–276 ms | **32.8 ms** |
-| Языки (>3× random) | нет данных | **45 из 51** |
-| Веса | закрытый API | **Apache 2.0** |
-| Стоимость | $0.042 / 1M токенов | **$0 (self-hosting)** |
+| 1. Pre-training | ~60M Nemotron DQA (вопрос = state, ответ = action) | широкие семантические представления |
+| 2. Mid-training | ~30M синтетических **hard negatives** (Gemini 2.5 Flash-Lite) | различение похожих вариантов |
+| 3. Post-training | ~1M агентских траекторий (ADP, Endless-Terminals, LiteCoder) | agentic alignment (40% replay) |
 
-Где Jev сильнее: **50+ вариантов в одном вопросе** (общий бюджет head=192–256 токенов
-не хватает на каждый маркер), и **soft-distribution matching** (0.580 vs 0.471).
+Ключевой урок: hard negatives лучше работают как **доработка**, а не как старт —
+52.1% → **69.2%** (двустадийно) против пиковых **62.4%** при обучении на них с нуля.
+
+Scaling laws: `L(X) ≈ (X_c/X)^α` по compute/dataset/head/encoder; ~**310 токенов на параметр**
+оптимального размера головы; рост энкодера даёт наибольший выигрыш.
 
 ---
 
-# Честные ограничения Laya (наши уроки)
+# Чем CLM отличается от GPT
 
-- **Base-модели ≈ random** на специализированных задачах (0.362 vs 0.318) —
-  нужен fine-tune; Laya — «быстрая база для специализации», не zero-shot-движок.
-- **High-cardinality выборы** (>50 опций) деградируют: каждый маркер получает ~3-4 токена.
-  Лечение: поднять `head_max_len` / `max_len`, или коарс-а-файн (2 уровня).
-- **noul** может «залипнуть» на своих label'ах (`false:` / `true:`), игнорируя state.
-- **score** — слабейший примитив (SST-5 0.372).
-- **Сырые вероятности over-confident** — temperature обязательно перекалибровать.
+| | **GPT / LLM** | **CLM-8B** |
+|---|---|---|
+| Режим | **генеративный** | **дискриминативный** |
+| Вывод | авторегрессия: токен за токеном | эмбеддинг state + dot по кандидатам |
+| Пространство ответов | словарь (любой текст) | кандидаты, заданные запросом (2–255) |
+| Скорость | 3–329 с (reasoning режимы дороже) | 16–80 мс (нулевик, RTX 4090) |
+| Тип ошибок | галлюцинации, ошибки формата | **не может** ответить несуществующим вариантом |
+| Интеграция в код | парсинг → валидация → повторы | тип + вероятность сразу |
+| Данные-эффективность | генеральный интерфейс к людям | специализация на выборе/ранжировании |
 
-Наш вывод для эксперимента: не полагаться на confidence без калибровки на
-собственных данных; сравнивать acc и macro-F1 на едином test-сплите.
+> Плата за это: CLM **не придумает** ответ, которого нет в списке кандидатов,
+> и зависит от качества этих кандидатов. LLM остаются универсальными.
+
+---
+
+# CLM-8B vs Jev: нулевик (zero-shot)
+
+| Задача | CLM-8B латенси | Jev латенси | CLM-8B успех | Jev успех |
+|---|---|---|---|---|
+| **T-Rex game** | 16.5 мс | 149.8 мс | 5/5 | 5/5 |
+| Tool calling (BFCL v4) | 76.8 мс | 125.5 мс | 95.2% | 99.2% |
+| WikiRacing | 79.8 мс | 225 мс | 26/30 | 30/30 |
+| Super Mario | 33.5 мс | 132.6 мс | 5/5 | 5/5 |
+
+- **До 9× быстрее** Jev; с ~1 000 кандидатов — **13×** (эмбеддинги действий кэшируются).
+- На играх — вровень; на tool calling и WikiRacing — чуть ниже по точности.
+- **Verifier (fine-tuned heads, H100)**: DeepSWE **81.6%** (79 мс) vs Jev 71.1% (449 мс);
+  Terminal-Bench 2.1 **87.6%** (32 мс) vs 83.1% (131 мс) — 4.1–5.7× быстрее. Хелд-аут-подмножества.
+
+**Откуда скорость**: state и actions «развязаны», действие повторно используется между шагами,
+векторы живут в зарезервированном кэше (как KV-cache у vLLM): повторные состояния 1.7 → **0.6 мс**.
+
+> Но CLM-8B требует **Qwen3-8B** энкодер ⇒ ≥16 ГБ VRAM. На 4 ГБ — не помещается.
+
+---
+
+# Часть 2 · Jev: почему он так хорош в Doom и WikiRacing
+
+## Jev — первый публичный System One model (TypeSafe AI)
+
+- State (текст/документ/JSON) + типизированные вопросы → типизированные ответы с вероятностями.
+- **RLCD** + **параллельный семплер**: все вероятности сразу, 0 сгенерированных токенов.
+- 70–500 мс end-to-end (vs 3–329 с у frontier LLM); $0.042/MTok, выходные токены бесплатно.
+- **Гарантированно** без типовых ошибок и без галлюцинаций (математически исключено).
+- Типы: **choice / score / noul** + калиброванная уверенность.
+
+```
+state + questions → choice / score / noul + probabilities + confidence
+```
+
+Имя — в честь Уильяма Стэнли Джевона; идея «System One» — из «Thinking, Fast and Slow» (Канеман).
+
+---
+
+# Почему Jev хорош в Doom
+
+Демо TypeSafe: живой бот, который реагирует на игровой процесс в реальном времени.
+
+- **10 решений в секунду** (~$7/час) — реально для real-time, где LLM-циклы в 100× медленнее.
+- Вход — **структурированный state** (дата-структура + текст), пока без изображений;
+  реактивность к *разным представлениям* игрового состояния.
+- **Параллельность**: все действия оцениваются одним вызовом — нет последовательной генерации токенов.
+- **Нет галлюцинаций**: Jev не «выдумывает» несуществующие действия — выбор всегда валиден.
+- **Следует инструкциям**: правила поверх изменяющегося state.
+
+> Нюанс авторов: не-AI бот сыграл бы лучше; но суть —
+> «интеллект-в-секунду» + реактивность к state + следование инструкциям.
+
+---
+
+# Почему Jev хорош в WikiRacing
+
+Задача: из стартовой страницы Википедии дойти до целевой, переходя по ссылкам.
+Каждый шаг — выбор из **сотен–тысяч ссылок**.
+
+- **Высокая мощность выбора**: Jev оценивает все ссылки **за один вызов** (кардинальность до 255;
+  для больших наборов — двухэтапная схема «скоринг → явный выбор»).
+- **Не галлюцинирует при большом выборе**: каждый вариант — реальная ссылка.
+- **Интеллект-в-секунду**: сочетание скорости (меньше латенси, чем у LLM-режимов reasoning)
+  и точности (Jev чаще финишировал **за меньшее число шагов** ≈ признак большего интеллекта).
+- «Складывающийся» эффект: на каждом шагу меньше ошибок → меньше возвратов → быстрее маршрут.
+
+> Общее в Doom и WikiRacing: **закрытые наборы действий + быстрый параллельный скоринг
+> + отсутствие генерации** — это именно то, чем CLM позднее усиленно «выигрывал» у Jev по латенси.
+
+---
+
+# Typed Decisions: протокол, независимый от бэкенда
+
+| Тип | Смысл | Формат ответа |
+|---|---|---|
+| **choice** | выбор одного из N | `choice` + `probabilities[]` |
+| **score** | число по рубрике | `score` + доверие |
+| **noul** | бинарное «да/нет» | `noul` = P(да) + `confidence` |
+
+- **Confidence** = доверие модели → программа сама выбирает:
+  высокое = действовать автономно, низкое = эскалация человеку.
+- Пороги уверенности задаёт разработчик — «intelligence used with control».
+
+Этот протокол реализуют и Jev, и CLM, и открытые «клоны» (Laya, NanoJev).
+
+---
+
+# Как учится Jev: RLCD — правдивые вероятности как оптимум
+
+**RLCD = Reinforcement Learning for Calibrated Decisions.**
+
+- Модель выдаёт распределение; **exploration** — гауссовский шум на логитах.
+- **Reward = строго собственный scoring rule** (log + spherical; для порядковых — RPS).
+- Строгая собственность ⇒ максимизировать reward можно **только честными вероятностями**.
+- Обновления: REINFORCE с GRPO-style базой; диалоги — TD(λ=1.0) по префиксным срезам.
+
+> Модель штрафуется не за «уверенность», а за **некалиброванность**.
+
+Сталь, наследуемая открытыми реализациями (Laya, NanoJev).
+
+---
+
+# Открытые реализации: Laya и NanoJev
+
+| | **Laya** | **NanoJev** |
+|---|---|---|
+| Backbone | ModernBERT-large (бидир., 395M) + головы = 421M | Qwen3-0.6B |
+| Decision head | option-marker scorer (`[MASK]` на кандидатов) | scorer на **последней позиции** каждого листа + attention set-head |
+| Кодирование | state + вопросы → текст с маркерами | каждый кандидат — отдельный «лист»-префикс → backbone → скаляр |
+| Требования | малые GPU, супер-быстро | **~1–2 ГБ** bf16/fp16 — влазит в 4 ГБ |
+| Лицензия | Apache-2.0 | открытый чекпойнт (Apache-2.0) |
+
+Общая схема (принципы Jev):
+
+```mermaid
+graph LR
+  A[State + вопросы] --> B[Сериализация в текст]
+  B --> C[Backbone]
+  C --> D[Decision scorer на кандидатов]
+  D --> E[softmax по вариантам]
+  E --> F[choice + probabilities + confidence]
+```
+
+---
+
+# Часть 3 · Наш эксперимент: TimesFM → NanoJev
+
+## Задача: классификация поведения по энергопотреблению
+
+- Данные: `P_RMS, mW` со смарт-розетки (CSV, `;`).
+- Разбивка на окна по **90 отсчётов**; классы: `IdleCharge / MixedBrowsing / Browsing / VKAudio`.
+- Стратифицированный сплит 30% на тест, `random_state=42` — **одинаков для всех подходов**.
+- Это ровно «System One»-форма: **state = окно → вопрос «какой паттерн?» → choice**.
+
+Как связано с CLM:
+- **«Потолок»**: RF/LogReg прямо на эмбеддингах TimesFM = контрастивный скоринг в духе CLM
+  (чем ближе вектор состояния к «вектору класса», тем выше вероятность).
+- **NanoJev zero-shot** = «Jev-стиль»: типизированный вопрос по текстовому state.
+- **«Франкенштейн»-голова** = обучаемый scorer поверх фич backbone`а (как у CLM: heads поверх энкодера).
+
+---
+
+# Pipeline эксперимента
+
+```mermaid
+graph TD
+  W[Окно P_RMS 90] --> T[TimesFM 3.0 frozen]
+  T --> E[эмбеддинг 1280d / masked mean-pool]
+  E -->|RF/LogReg| CEIL[Потолок: RF-1280, LogReg-1280]
+  E -->|PCA 16, fit на train| PCA[16 компонент]
+  W -->|11 стат-признаков| STATS[state stats]
+  PCA -->|в текст| STATE2[state stats + tfmpca-текст]
+  STATS --> NJ0[NanoJev zero-shot]
+  STATE2 --> NJ0
+  NJ0 --> ZS[acc / macro-F1]
+  STATS --> NB[NanoJev backbone leaf-features]
+  STATE2 --> NB
+  NB --> HEAD[Linear head + CE]
+  HEAD --> FT[acc / macro-F1]
+  CEIL --> TAB[Сравнительная таблица]
+  ZS --> TAB
+  FT --> TAB
+```
+
+- Проба на эмбеддингах = «потолок»; zero-shot и голова — как близко мы подбираемся к нему.
+- Калибровка PCA только на train — без утечки; токенизаторный контракт проверен
+  (`validate_request` из репо NanoJev).
+
+---
+
+# Что уже проверено / что нас ждёт
+
+- **Контракт** чекпойнта `C-Tianyu/NanoJev`: `states[{id, state, questions}]`,
+  типы `boolean / choice / score`, `max_length=8192`, `set_head="attention"`, bf16.
+- **Токенизаторный бюэкзамен**: реальный Qwen3-токенизатор чекпойнта —
+  листья укладываются в 8192 (stats ~306 / tfmpca ~468 токенов), границы пулинга корректны.
+- **Утилизиция GPU**: на T4 форсим fp16 (bf16 на T4 медленный); батчи и прогресс-бары;
+  кэш фичей на диск.
+
+Ожидания (гипотезы, цифры после прогона):
+
+| Подход | acc тест | комментарий |
+|---|---|---|
+| RF на 11 стат-признаках | — | базовый бейзлайн |
+| RF / LogReg на эмбеддингах 1280d | — | **потолок** признаков TimesFM |
+| NanoJev zero-shot (stats) | — | Jev-стайл по тексту |
+| NanoJev zero-shot (stats + PCA16) | — | кузина CLM-скоринга через текст |
+| NanoJev + Linear-голова (stats / tfmpca) | — | «heads поверх энкодера», как CLM |
+
+Гипотеза: потолок выше; zero-shot ниже; голова подтягивает; «транспорт признаков через текст» — узкое место.
 
 ---
 
 # Резюме
 
-| | Jev (TypeSafe AI) | Laya (open source) |
-|---|---|---|
-| Тип | System One, закрытый API | System One, Apache-2.0 |
-| Идея | typed decisions + calibrated confidence, 0 токенов | 1:1 то же |
-| Модель | проприетарная | ModernBERT-large 421M / mmBERT 322M |
-| Обучение | RLCD | RTCD-в-духе (GRPO, strictly proper rules) |
-| Протокол | `/v1/systemone` | **совместим** |
-| Доступ | $$ | **бесплатно, self-host** |
+- **CLM** открыла дискриминативный путь: эмбеддинги + dot-product на кандидатах →
+  до **9× быстрее** Jev, без генерации текста и без галлюцинаций, но с тяжёлым Qwen3-8B.
+- **Jev** + RLCD: типизированные решения и **калиброванная уверенность** — именно они позволяют
+  Doom-бота выдавать 10 решений/с и WikiRacing выбирать среди тысяч ссылок за один вызов.
+- **Наша задача** повторяет ту же форму «state → choice»: NanoJev = открытый Jev-подобный базис,
+  TimesFM-эмбеддинги = контрастивный «потолок», Linear-голова = обучаемый CLM-стиль scorer.
 
-**Главное:** сначала «голова» type-safe решений и правдивой уверенности,
-потом — быстрый inference одним forward pass-ом и открытая реализация.
-
-**Наш проект:** используем Laya как «клон Jev» для классификации поведения —
-zero-shot (раздел 2), RandomForest baseline (раздел 3), fine-tune Laya (раздел 4),
-«Франкенштейн» TimesFM→Laya (раздел 5) и сравнение на чешском тест-сплите.
+**Вопрос дальше**: стоит ли под H100 сделаться на полноценный CLM-8B (нужен ≥16 ГБ),
+или остаёмся на NanoJev (0.6B, влезает в 4 ГБ) и развиваем «головы-скоры» на эмбеддингах.
 
 ---
 
@@ -334,7 +336,10 @@ zero-shot (раздел 2), RandomForest baseline (раздел 3), fine-tune La
 <br>
 
 **Ссылки:**
-- TypeSafe AI — https://www.typesafe.ai/ · блог «Introducing System One Models & Jev»
+- CLM — https://github.com/Contrastive-LM/CLM · https://huggingface.co/Contrastive-LM/CLM-v0.1-8B
+  · блог https://contrastive-lm.notion.site · пресс-релиз MarkTechPost (23.09.2026)
+- Jev — https://www.typesafe.ai/ · блог «Introducing System One Models & Jev»
 - Laya — https://github.com/NandhaKishorM/laya · https://huggingface.co/convaiinnovations/laya
-- Fine-tune ноутбук — `notebooks/laya_finetune_typed_decisions_2xT4_kaggle.ipynb`
-- Наш эксперимент — `Jev_Laya_smartplug.ipynb` (этот репозиторий)
+- NanoJev — https://huggingface.co/C-Tianyu/NanoJev (revision `unified-games-v1`)
+- Наши ноутбуки — `TimesFM_to_NanoJev_smartplug.ipynb`, `NanoJev_vs_RF_smartplug.ipynb`,
+  `Jev_Laya_smartplug.ipynb` (этот репозиторий)
